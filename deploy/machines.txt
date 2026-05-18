@@ -1,0 +1,5 @@
+# One hostname or IP per line. Lines starting with # are ignored.
+# Examples:
+# DESKTOP-ABC123
+# 10.0.0.42
+# pc-finance-01.corp.local

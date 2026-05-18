@@ -1,0 +1,34 @@
+-- Reopen the latest "killed but agent still updating" session for MI-1028
+WITH latest AS (
+  SELECT TOP 1 s.SessionId
+    FROM dbo.Sessions s
+    JOIN dbo.Machines m ON m.MachineId = s.MachineId
+   WHERE m.MachineName = 'MI-1028'
+     AND s.UpdatedUtc > DATEADD(MINUTE, -5, SYSUTCDATETIME())
+   ORDER BY s.UpdatedUtc DESC
+)
+UPDATE s
+   SET LogoffTimeUtc   = NULL,
+       DurationSeconds = NULL,
+       EndReason       = NULL,
+       UpdatedUtc      = SYSUTCDATETIME()
+  FROM dbo.Sessions s
+  JOIN latest l ON l.SessionId = s.SessionId;
+  
+  -----------
+  
+  
+  UPDATE dbo.Sessions
+   SET LogoffTimeUtc   = SYSUTCDATETIME(),
+       DurationSeconds = DATEDIFF(SECOND, LogonTimeUtc, SYSUTCDATETIME()),
+       EndReason       = 'ManualClose'
+ WHERE SessionId = (
+   SELECT TOP 1 SessionId
+     FROM dbo.Sessions s
+     JOIN dbo.Machines m ON m.MachineId = s.MachineId
+    WHERE m.MachineName = 'MI-1028'
+      AND s.LogoffTimeUtc IS NULL
+    ORDER BY s.LogonTimeUtc DESC
+ );
+ 
+ 

@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  UAM Activity Agent - WiX 3 MSI source
+  Builds a per-machine MSI that:
+    - Requires Node.js LTS to be installed (registry check)
+    - Drops the agent into  C:\Program Files\UAMAgent\
+    - Creates the data dir   C:\ProgramData\UAMAgent\
+    - Registers a Windows service "UAM Activity Agent" via WinSW
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+     xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
+
+  <Product Id="*"
+           Name="UAM Activity Agent"
+           Language="1033"
+           Version="1.0.0"
+           Manufacturer="Mahathi Infotech"
+           UpgradeCode="b3a7e2f4-9c4d-4e5b-8f2a-1d2c3b4a5e6f">
+
+    <Package InstallerVersion="500"
+             Compressed="yes"
+             InstallScope="perMachine"
+             Description="UAM Activity Agent - User Activity Monitoring"
+             Comments="Mahathi Infotech (c)" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of UAM Agent is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="UAMIcon" SourceFile="staging\uam.ico" />
+    <Property Id="ARPPRODUCTICON" Value="UAMIcon" />
+    <Property Id="ARPHELPLINK" Value="http://build.mahathiinfotech.com/" />
+
+    <!-- Require Node.js: check for HKLM\SOFTWARE\Node.js InstallPath -->
+    <Property Id="NODEJSPATH">
+      <RegistrySearch Id="FindNodeJs"
+                      Root="HKLM"
+                      Key="SOFTWARE\Node.js"
+                      Name="InstallPath"
+                      Type="raw"
+                      Win64="yes" />
+    </Property>
+    <Condition Message="Node.js 18 LTS or later is required before installing the UAM Agent.&#xD;&#xA;Download from https://nodejs.org/ and run setup again.">
+      <![CDATA[Installed OR NODEJSPATH]]>
+    </Condition>
+
+    <Feature Id="MainFeature" Title="UAM Activity Agent" Level="1">
+      <ComponentGroupRef Id="AgentFiles" />
+      <ComponentRef Id="ServiceWrapper" />
+      <ComponentRef Id="DataDirComponent" />
+    </Feature>
+
+    <!-- Folder layout -->
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="UAMAgent" />
+      </Directory>
+      <Directory Id="CommonAppDataFolder">
+        <Directory Id="DATAFOLDER" Name="UAMAgent">
+          <Directory Id="SPOOLFOLDER" Name="spool" />
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <!-- Service wrapper component (WinSW) - registers the Windows service -->
+    <Component Id="ServiceWrapper" Directory="INSTALLFOLDER" Guid="3f8a1c2d-7b6e-4f5a-9d3c-2e1b8c7d6f5a" Win64="yes">
+      <File Id="WinSWExe"
+            Name="uam-agent-service.exe"
+            Source="staging\winsw\uam-agent-service.exe"
+            KeyPath="yes" />
+      <File Id="WinSWConfig"
+            Name="uam-agent-service.xml"
+            Source="staging\winsw\uam-agent-service.xml" />
+
+      <ServiceInstall Id="UAMAgentService"
+                      Type="ownProcess"
+                      Vital="yes"
+                      Name="UAM Activity Agent"
+                      DisplayName="UAM Activity Agent"
+                      Description="User Activity Monitoring Agent. Collects login/lock/app usage and reports to the UAM server."
+                      Start="auto"
+                      Account="LocalSystem"
+                      ErrorControl="normal"
+                      Interactive="no">
+        <util:ServiceConfig FirstFailureActionType="restart"
+                            SecondFailureActionType="restart"
+                            ThirdFailureActionType="restart"
+                            RestartServiceDelayInSeconds="60"
+                            ResetPeriodInDays="1" />
+      </ServiceInstall>
+      <ServiceControl Id="UAMAgentServiceControl"
+                      Name="UAM Activity Agent"
+                      Start="install"
+                      Stop="both"
+                      Remove="uninstall"
+                      Wait="yes" />
+    </Component>
+
+    <!-- Data folder with proper ACLs -->
+    <Component Id="DataDirComponent" Directory="DATAFOLDER" Guid="9c8b7a6f-5e4d-3c2b-1a0f-9e8d7c6b5a4f" Win64="yes">
+      <CreateFolder>
+        <util:PermissionEx User="SYSTEM" GenericAll="yes" />
+        <util:PermissionEx User="Administrators" GenericAll="yes" />
+      </CreateFolder>
+      <RemoveFolder Id="RemoveDataFolder" On="uninstall" />
+      <RegistryValue Root="HKLM" Key="Software\Mahathi\UAMAgent" Name="DataDir" Type="string" Value="[DATAFOLDER]" KeyPath="yes" />
+    </Component>
+
+  </Product>
+</Wix>

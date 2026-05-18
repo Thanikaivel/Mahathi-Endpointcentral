@@ -1,0 +1,18 @@
+{
+  "apiBaseUrl": "http://build.mahathiinfotech.com:5321/api",
+  "agentKey": "change-me-in-production",
+  "agentVersion": "1.0.0",
+
+  "pollIntervalSeconds": 5,
+  "syncIntervalSeconds": 60,
+  "idleThresholdSeconds": 120,
+  "endSessionAfterIdleSeconds": 3600,
+
+  "spoolDir": "C:\\ProgramData\\UAMAgent\\spool",
+  "stateFile": "C:\\ProgramData\\UAMAgent\\state.json",
+  "logFile":   "C:\\ProgramData\\UAMAgent\\agent.log",
+
+  "trackForegroundApp": true,
+  "trackRunningApps": true,
+  "maxBatchSizeKb": 1024
+}
