@@ -166,28 +166,60 @@ router.get('/users/daily', async (req, res, next) => {
           SELECT
             CAST(DATEADD(MINUTE, @Tz, e.EventTimeUtc) AS DATE) AS [Date],
             e.MachineId, e.UserId,
-            MAX(CASE WHEN e.EventType = 'Lock'   THEN e.EventTimeUtc END) AS LastLock,
-            MAX(CASE WHEN e.EventType = 'Unlock' THEN e.EventTimeUtc END) AS LastUnlock
+            MAX(CASE WHEN e.EventType = 'Lock'     THEN e.EventTimeUtc END) AS LastLock,
+            MAX(CASE WHEN e.EventType = 'Unlock'   THEN e.EventTimeUtc END) AS LastUnlock,
+            MAX(CASE WHEN e.EventType = 'Shutdown' THEN e.EventTimeUtc END) AS LastShutdown
           FROM dbo.SessionEvents e
-          WHERE e.EventType IN ('Lock','Unlock')
+          WHERE e.EventType IN ('Lock','Unlock','Shutdown')
             AND CAST(DATEADD(MINUTE, @Tz, e.EventTimeUtc) AS DATE) BETWEEN @Start AND @End
           GROUP BY CAST(DATEADD(MINUTE, @Tz, e.EventTimeUtc) AS DATE), e.MachineId, e.UserId
+        ),
+        LatestSession AS (
+          -- Pick the most-recent session per (date, machine, user) so we can
+          -- decide what the "last status" was: Active, Locked, Logoff, Shutdown, Restarted, etc.
+          SELECT * FROM (
+            SELECT
+              CAST(DATEADD(MINUTE, @Tz, s.LogonTimeUtc) AS DATE) AS [Date],
+              s.MachineId, s.UserId, s.LogoffTimeUtc, s.EndReason, s.IsLocked,
+              ROW_NUMBER() OVER (
+                PARTITION BY CAST(DATEADD(MINUTE, @Tz, s.LogonTimeUtc) AS DATE), s.MachineId, s.UserId
+                ORDER BY s.LogonTimeUtc DESC
+              ) AS rn
+            FROM dbo.Sessions s
+            WHERE CAST(DATEADD(MINUTE, @Tz, s.LogonTimeUtc) AS DATE) BETWEEN @Start AND @End
+          ) x WHERE x.rn = 1
         )
         SELECT
           sd.[Date],
+          m.MachineId,
           m.MachineName,
           u.UserName,
           u.Domain,
           sd.FirstLogin,
           ld.LastLock,
           ld.LastUnlock,
+          ld.LastShutdown,
+          m.LastSeenUtc AS MachineLastSeen,
           sd.TotalSeconds,
-          sd.ActiveSeconds
+          sd.ActiveSeconds,
+          CASE
+            WHEN ls.LogoffTimeUtc IS NULL AND ls.IsLocked = 1 THEN 'Locked'
+            WHEN ls.LogoffTimeUtc IS NULL                     THEN 'Active'
+            WHEN ls.EndReason = 'Shutdown'                    THEN 'Shutdown'
+            WHEN ls.EndReason = 'Logoff'                      THEN 'Logoff'
+            WHEN ls.EndReason = 'AgentRestart'                THEN 'Restarted'
+            WHEN ls.EndReason = 'StaleTimeout'                THEN 'Offline'
+            WHEN ls.EndReason = 'LongIdle'                    THEN 'Idle'
+            WHEN ls.EndReason IS NOT NULL                     THEN ls.EndReason
+            ELSE 'Unknown'
+          END AS LastStatus
         FROM SessionsDaily sd
         JOIN dbo.Machines m ON m.MachineId = sd.MachineId
         JOIN dbo.Users    u ON u.UserId    = sd.UserId
         LEFT JOIN LocksDaily ld
           ON ld.[Date] = sd.[Date] AND ld.MachineId = sd.MachineId AND ld.UserId = sd.UserId
+        LEFT JOIN LatestSession ls
+          ON ls.[Date] = sd.[Date] AND ls.MachineId = sd.MachineId AND ls.UserId = sd.UserId
         WHERE (@Search = '%%'
                OR m.MachineName LIKE @Search
                OR u.UserName    LIKE @Search)

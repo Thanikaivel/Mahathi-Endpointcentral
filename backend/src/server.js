@@ -68,6 +68,15 @@ const STALE_INTERVAL_MS = 5 * 60 * 1000;
 setTimeout(runStaleCleanup, 30 * 1000);             // first run 30s after start
 setInterval(runStaleCleanup, STALE_INTERVAL_MS);    // every 5 minutes thereafter
 
+// Last-resort safety nets so a stray unhandled error doesn't crash the
+// whole backend (we'd rather log and keep serving the other 299 agents).
+process.on('uncaughtException',  (err) => {
+  console.error('[uncaughtException]', err && err.stack || err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason && (reason.stack || reason.message || reason));
+});
+
 app.listen(PORT, () => {
   console.log(`[uam-backend] listening on :${PORT}`);
 });

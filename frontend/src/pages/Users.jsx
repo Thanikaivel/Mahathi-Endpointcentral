@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { Spinner, ErrorBox } from '../components/Helpers.jsx';
 
@@ -17,6 +18,33 @@ function fmtDate(v) {
     return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
   } catch { return String(v); }
 }
+// Badge component for the Status column
+function StatusBadge({ status }) {
+  const colors = {
+    Active:    { bg: '#1d5a2c', fg: '#7ee7a3' },  // green
+    Locked:    { bg: '#5a4a1d', fg: '#e7c97e' },  // amber
+    Shutdown:  { bg: '#5a1d1d', fg: '#ff8a8a' },  // red
+    Restarted: { bg: '#1d3a5a', fg: '#7ec7ff' },  // blue
+    Logoff:    { bg: '#3a3a3a', fg: '#c9d1d9' },  // gray
+    Offline:   { bg: '#3a3a3a', fg: '#c9d1d9' },  // gray
+    Idle:      { bg: '#5a4a1d', fg: '#e7c97e' },  // amber
+  };
+  const c = colors[status] || { bg: '#3a3a3a', fg: '#c9d1d9' };
+  return (
+    <span style={{
+      padding: '2px 8px',
+      borderRadius: '12px',
+      fontSize: '12px',
+      fontWeight: 600,
+      background: c.bg,
+      color: c.fg,
+      whiteSpace: 'nowrap'
+    }}>
+      {status || '—'}
+    </span>
+  );
+}
+
 // "01h 31m"
 function fmtActiveHours(seconds) {
   if (seconds == null || isNaN(seconds)) return '—';
@@ -37,12 +65,33 @@ function daysAgoIso(n) {
   return new Date(d - z).toISOString().slice(0, 10);
 }
 
+// Sortable table header
+function Th({ label, col, sort, setSort, defaultDir = 'asc' }) {
+  const active = sort.col === col;
+  const arrow  = !active ? '' : sort.dir === 'asc' ? ' ▲' : ' ▼';
+  return (
+    <th
+      style={{ cursor: 'pointer', userSelect: 'none' }}
+      onClick={() =>
+        setSort(s =>
+          s.col === col
+            ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' }
+            : { col, dir: defaultDir }
+        )
+      }
+    >
+      {label}{arrow}
+    </th>
+  );
+}
+
 export default function Users() {
   const [rows, setRows]   = useState(null);
   const [error, setError] = useState(null);
   const [start, setStart] = useState(todayIso());
   const [end,   setEnd]   = useState(todayIso());
   const [q,     setQ]     = useState('');
+  const [sort,  setSort]  = useState({ col: 'FirstLogin', dir: 'asc' });
 
   const load = useCallback(() => {
     setRows(null); setError(null);
@@ -54,9 +103,38 @@ export default function Users() {
   function clearFilter() { setQ(''); }
   function clearAll()    { setQ(''); setStart(todayIso()); setEnd(todayIso()); }
 
+  // Apply client-side sorting
+  const sortedRows = useMemo(() => {
+    if (!rows) return null;
+    const dir = sort.dir === 'asc' ? 1 : -1;
+    const col = sort.col;
+
+    // For time/date columns, sort by the raw ISO value; nulls last.
+    const isTimeCol = ['FirstLogin', 'LastLock', 'LastUnlock', 'MachineLastSeen', 'Date'].includes(col);
+    const isNumCol  = ['ActiveSeconds', 'TotalSeconds'].includes(col);
+
+    const cmp = (a, b) => {
+      const av = a[col];
+      const bv = b[col];
+      // null/undefined go last regardless of direction
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (isTimeCol) {
+        return (new Date(av).getTime() - new Date(bv).getTime()) * dir;
+      }
+      if (isNumCol) {
+        return ((Number(av) || 0) - (Number(bv) || 0)) * dir;
+      }
+      return String(av).localeCompare(String(bv), undefined, { sensitivity: 'base' }) * dir;
+    };
+
+    return [...rows].sort(cmp);
+  }, [rows, sort]);
+
   return (
     <>
-      <h1 className="page-title">Users Dashboard</h1>
+      <h1 className="page-title">User Activity Summary</h1>
 
       <div className="toolbar">
         <label className="muted">Start date:</label>
@@ -75,36 +153,49 @@ export default function Users() {
       </div>
 
       <ErrorBox error={error} />
-      {!rows && !error && <Spinner />}
+      {!sortedRows && !error && <Spinner />}
 
-      {rows && (
+      {sortedRows && (
         <div className="panel">
+          <div style={{ marginBottom: 8 }} className="muted">
+            {sortedRows.length} row(s) — click any column header to sort.
+          </div>
           <table>
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Computer</th>
-                <th>User</th>
-                <th>First Login</th>
-                <th>Last Lock</th>
-                <th>Last Unlock</th>
-                <th>Active Hours</th>
+                <Th label="Date"          col="Date"          sort={sort} setSort={setSort} defaultDir="desc" />
+                <Th label="Computer"      col="MachineName"   sort={sort} setSort={setSort} defaultDir="asc" />
+                <Th label="User"          col="UserName"      sort={sort} setSort={setSort} defaultDir="asc" />
+                <Th label="First Login"   col="FirstLogin"    sort={sort} setSort={setSort} defaultDir="asc" />
+                <Th label="Last Lock"     col="LastLock"      sort={sort} setSort={setSort} defaultDir="asc" />
+                <Th label="Last Unlock"   col="LastUnlock"       sort={sort} setSort={setSort} defaultDir="asc" />
+                <Th label="Last Seen"     col="MachineLastSeen"  sort={sort} setSort={setSort} defaultDir="desc" />
+                <Th label="Active Hours"  col="ActiveSeconds"    sort={sort} setSort={setSort} defaultDir="desc" />
+                <Th label="Status"        col="LastStatus"       sort={sort} setSort={setSort} defaultDir="asc" />
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => (
+              {sortedRows.map((r, i) => (
                 <tr key={`${r.Date}-${r.MachineName}-${r.UserName}-${i}`}>
                   <td>{fmtDate(r.Date)}</td>
-                  <td>{r.MachineName}</td>
+                  <td>
+                    {r.MachineName
+                      ? <Link to={`/apps?machine=${encodeURIComponent(r.MachineName)}&start=${r.Date.slice(0,10)}&end=${r.Date.slice(0,10)}`}>
+                          {r.MachineName}
+                        </Link>
+                      : r.MachineName}
+                  </td>
                   <td>{r.UserName}</td>
                   <td>{fmtTime(r.FirstLogin)}</td>
                   <td>{fmtTime(r.LastLock)}</td>
                   <td>{fmtTime(r.LastUnlock)}</td>
+                  <td>{fmtTime(r.MachineLastSeen)}</td>
                   <td>{fmtActiveHours(r.ActiveSeconds)}</td>
+                  <td><StatusBadge status={r.LastStatus} /></td>
                 </tr>
               ))}
-              {rows.length === 0 && (
-                <tr><td colSpan={7} className="muted">No activity in this date range.</td></tr>
+              {sortedRows.length === 0 && (
+                <tr><td colSpan={9} className="muted">No activity in this date range.</td></tr>
               )}
             </tbody>
           </table>

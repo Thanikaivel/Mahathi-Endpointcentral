@@ -23,7 +23,7 @@ export default function Layout() {
         <nav>
           <NavLink to="/" end className={linkClass}>Overview</NavLink>
           <NavLink to="/machines" className={linkClass}>Machines</NavLink>
-          <NavLink to="/users" className={linkClass}>Users</NavLink>
+          <NavLink to="/users" className={linkClass}>User Activity</NavLink>
           <NavLink to="/apps" className={linkClass}>Application Usage</NavLink>
           <NavLink to="/reports" className={linkClass}>Reports</NavLink>
         </nav>

@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { Spinner, ErrorBox } from '../components/Helpers.jsx';
 
@@ -61,11 +62,20 @@ function Th({ label, col, sort, setSort }) {
 }
 
 export default function TopApps() {
+  const [params] = useSearchParams();
+  // Read initial filter values from the URL (so links from other pages can
+  // pre-seed the filter, e.g. "?machine=MI-1028&start=2026-05-20&end=2026-05-20").
+  const initialMachine = params.get('machine') || '';
+  const initialUser    = params.get('user')    || '';
+  const initialStart   = params.get('start')   || todayIso();
+  const initialEnd     = params.get('end')     || todayIso();
+  const initialQ       = initialMachine || initialUser || '';
+
   const [rows, setRows]   = useState(null);
   const [error, setError] = useState(null);
-  const [start, setStart] = useState(daysAgoIso(7));
-  const [end,   setEnd]   = useState(todayIso());
-  const [q,     setQ]     = useState('');
+  const [start, setStart] = useState(initialStart);
+  const [end,   setEnd]   = useState(initialEnd);
+  const [q,     setQ]     = useState(initialQ);
   const [sort,  setSort]  = useState({ col: 'ForegroundSeconds', dir: 'desc' });
 
   const load = useCallback(() => {
@@ -76,7 +86,7 @@ export default function TopApps() {
   useEffect(() => { load(); }, [load]);
 
   function clearFilter() { setQ(''); }
-  function clearAll()    { setQ(''); setStart(daysAgoIso(7)); setEnd(todayIso()); }
+  function clearAll()    { setQ(''); setStart(todayIso()); setEnd(todayIso()); }
 
   const sortedRows = useMemo(() => {
     if (!rows) return null;
