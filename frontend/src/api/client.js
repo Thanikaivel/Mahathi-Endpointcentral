@@ -45,18 +45,19 @@ async function post(path, body) {
 export const api = {
   health:        ()                => get('/health'),
   overview:      ()                => get('/dashboard/overview'),
-  machines:      (q='')            => get(`/dashboard/machines?search=${encodeURIComponent(q)}`),
+  machines:      ({ q='', page=1, pageSize=50 } = {}) =>
+    get(`/dashboard/machines?search=${encodeURIComponent(q)}&page=${page}&pageSize=${pageSize}`),
   machine:       (id)              => get(`/dashboard/machines/${id}`),
   machineSessions: (id, limit=50)  => get(`/dashboard/machines/${id}/sessions?limit=${limit}`),
   users:         ()                => get('/dashboard/users'),
-  usersDaily:    ({ start='', end='', q='' } = {}) => {
+  usersDaily:    ({ start='', end='', q='', page=1, pageSize=50 } = {}) => {
     const p = new URLSearchParams();
     if (start) p.set('start', start);
     if (end)   p.set('end',   end);
     if (q)     p.set('q',     q);
-    // Browser timezone offset in minutes (positive east of UTC).
-    // JS getTimezoneOffset() is the *opposite* sign convention, hence the negation.
     p.set('tz', String(-new Date().getTimezoneOffset()));
+    p.set('page', String(page));
+    p.set('pageSize', String(pageSize));
     return get(`/dashboard/users/daily?${p.toString()}`);
   },
   session:       (id)              => get(`/dashboard/sessions/${id}`),
@@ -68,12 +69,13 @@ export const api = {
     if (machines.length) p.set('machines', machines.join(','));
     return get(`/dashboard/apps/top?${p.toString()}`);
   },
-  appsList:      ({ start='', end='', q='', limit=5000 } = {}) => {
+  appsList:      ({ start='', end='', q='', page=1, pageSize=50 } = {}) => {
     const p = new URLSearchParams();
     if (start) p.set('start', start);
     if (end)   p.set('end',   end);
     if (q)     p.set('q',     q);
-    p.set('limit', String(limit));
+    p.set('page', String(page));
+    p.set('pageSize', String(pageSize));
     return get(`/dashboard/apps/list?${p.toString()}`);
   },
   daily:         (days=14)         => get(`/dashboard/reports/daily?days=${days}`),

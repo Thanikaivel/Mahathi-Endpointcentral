@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { Spinner, ErrorBox } from '../components/Helpers.jsx';
+import Pagination from '../components/Pagination.jsx';
 
 // --- formatters mirrored from the Users Dashboard ----------------------------
 function fmtDate(v) {
@@ -71,8 +72,11 @@ export default function TopApps() {
   const initialEnd     = params.get('end')     || todayIso();
   const initialQ       = initialMachine || initialUser || '';
 
-  const [rows, setRows]   = useState(null);
-  const [error, setError] = useState(null);
+  const [rows, setRows]         = useState(null);
+  const [total, setTotal]       = useState(0);
+  const [page, setPage]         = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [error, setError]       = useState(null);
   const [start, setStart] = useState(initialStart);
   const [end,   setEnd]   = useState(initialEnd);
   const [q,     setQ]     = useState(initialQ);
@@ -80,10 +84,13 @@ export default function TopApps() {
 
   const load = useCallback(() => {
     setRows(null); setError(null);
-    api.appsList({ start, end, q }).then(setRows).catch(setError);
-  }, [start, end, q]);
+    api.appsList({ start, end, q, page, pageSize })
+      .then(r => { setRows(r.rows || []); setTotal(r.total || 0); })
+      .catch(setError);
+  }, [start, end, q, page, pageSize]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { setPage(1); }, [start, end, q, pageSize]);
 
   function clearFilter() { setQ(''); }
   function clearAll()    { setQ(''); setStart(todayIso()); setEnd(todayIso()); }
@@ -179,6 +186,8 @@ export default function TopApps() {
               )}
             </tbody>
           </table>
+          <Pagination total={total} page={page} pageSize={pageSize}
+                      onPageChange={setPage} onPageSizeChange={setPageSize} />
         </div>
       )}
     </>

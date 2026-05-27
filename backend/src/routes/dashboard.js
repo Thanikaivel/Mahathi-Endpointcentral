@@ -38,16 +38,25 @@ router.get('/overview', async (req, res, next) => {
 
 router.get('/machines', async (req, res, next) => {
   try {
-    const search = (req.query.search || '').toString();
+    const search   = (req.query.search || '').toString();
+    const page     = Math.max(1,   asInt(req.query.page,     1));
+    const pageSize = Math.min(500, Math.max(1, asInt(req.query.pageSize, 50)));
+    const offset   = (page - 1) * pageSize;
+
     const pool = await getPool();
     const r = await pool.request()
-      .input('Search', sql.NVarChar(128), `%${search}%`)
+      .input('Search',   sql.NVarChar(128), `%${search}%`)
+      .input('Offset',   sql.Int, offset)
+      .input('PageSize', sql.Int, pageSize)
       .query(`
+        SELECT COUNT(*) AS Total
+          FROM dbo.Machines m
+         WHERE @Search = '%%' OR m.MachineName LIKE @Search;
+
         SELECT m.MachineId, m.MachineName, m.Domain, m.OSVersion, m.IPAddress,
                m.AgentVersion, m.FirstSeenUtc, m.LastSeenUtc,
                (SELECT COUNT(*) FROM dbo.Sessions s WHERE s.MachineId = m.MachineId) AS SessionCount,
                (SELECT COUNT(*) FROM dbo.Sessions s WHERE s.MachineId = m.MachineId AND s.LogoffTimeUtc IS NULL) AS ActiveSessionCount,
-               -- Latest user: prefer an active session, otherwise fall back to the most-recent session.
                (SELECT TOP 1 u.UserName
                   FROM dbo.Sessions s
                   JOIN dbo.Users u ON u.UserId = s.UserId
@@ -62,9 +71,14 @@ router.get('/machines', async (req, res, next) => {
                           s.LogonTimeUtc DESC) AS LatestUserDomain
         FROM dbo.Machines m
         WHERE @Search = '%%' OR m.MachineName LIKE @Search
-        ORDER BY m.LastSeenUtc DESC;
+        ORDER BY m.LastSeenUtc DESC
+        OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;
       `);
-    res.json(r.recordset);
+    res.json({
+      rows:     r.recordsets[1],
+      total:    r.recordsets[0][0].Total,
+      page, pageSize
+    });
   } catch (e) { next(e); }
 });
 
@@ -135,18 +149,22 @@ router.get('/users/daily', async (req, res, next) => {
     const end   = (req.query.end   || fmt(today)).toString();
     const q     = (req.query.q || '').toString().trim();
     const like  = q ? `%${q}%` : '%%';
+    const page     = Math.max(1,   asInt(req.query.page,     1));
+    const pageSize = Math.min(500, Math.max(1, asInt(req.query.pageSize, 50)));
+    const offset   = (page - 1) * pageSize;
     // Browser-supplied timezone offset in minutes (UTC+05:30 -> 330).
-    // Falls back to 0 (UTC) when caller doesn't pass one.
     let tz = parseInt(req.query.tz, 10);
     if (!Number.isFinite(tz)) tz = 0;
     if (tz < -14 * 60 || tz > 14 * 60) tz = 0;
 
     const pool = await getPool();
     const r = await pool.request()
-      .input('Start',  sql.Date,         start)
-      .input('End',    sql.Date,         end)
-      .input('Search', sql.NVarChar(128), like)
-      .input('Tz',     sql.Int,          tz)
+      .input('Start',    sql.Date,          start)
+      .input('End',      sql.Date,          end)
+      .input('Search',   sql.NVarChar(128), like)
+      .input('Tz',       sql.Int,           tz)
+      .input('Offset',   sql.Int,           offset)
+      .input('PageSize', sql.Int,           pageSize)
       .query(`
         WITH SessionsDaily AS (
           SELECT
@@ -212,7 +230,8 @@ router.get('/users/daily', async (req, res, next) => {
             WHEN ls.EndReason = 'LongIdle'                    THEN 'Idle'
             WHEN ls.EndReason IS NOT NULL                     THEN ls.EndReason
             ELSE 'Unknown'
-          END AS LastStatus
+          END AS LastStatus,
+          COUNT(*) OVER () AS TotalRows
         FROM SessionsDaily sd
         JOIN dbo.Machines m ON m.MachineId = sd.MachineId
         JOIN dbo.Users    u ON u.UserId    = sd.UserId
@@ -223,9 +242,16 @@ router.get('/users/daily', async (req, res, next) => {
         WHERE (@Search = '%%'
                OR m.MachineName LIKE @Search
                OR u.UserName    LIKE @Search)
-        ORDER BY sd.[Date] DESC, m.MachineName, u.UserName;
+        ORDER BY sd.[Date] DESC, m.MachineName, u.UserName
+        OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;
       `);
-    res.json(r.recordset);
+    // Note: total row count comes from the same query via COUNT(*) OVER () inlined below.
+    // (See the modified SELECT — TotalRows is on every row, identical value.)
+    const rows  = r.recordset;
+    const total = rows.length > 0 && rows[0].TotalRows != null ? rows[0].TotalRows : rows.length;
+    // Strip TotalRows from each row so the JSON stays clean
+    for (const row of rows) delete row.TotalRows;
+    res.json({ rows, total, page, pageSize });
   } catch (e) { next(e); }
 });
 
@@ -292,39 +318,50 @@ router.get('/apps/list', async (req, res, next) => {
     const end   = (req.query.end   || fmt(today)).toString();
     const q     = (req.query.q || '').toString().trim();
     const like  = q ? `%${q}%` : '%%';
-    const limit = Math.min(parseInt(req.query.limit || '5000', 10) || 5000, 20000);
+    const page     = Math.max(1,    asInt(req.query.page,     1));
+    const pageSize = Math.min(1000, Math.max(1, asInt(req.query.pageSize, 50)));
+    const offset   = (page - 1) * pageSize;
 
     const pool = await getPool();
     const r = await pool.request()
-      .input('Start',  sql.Date,          start)
-      .input('End',    sql.Date,          end)
-      .input('Search', sql.NVarChar(256), like)
-      .input('Lim',    sql.Int,           limit)
+      .input('Start',    sql.Date,          start)
+      .input('End',      sql.Date,          end)
+      .input('Search',   sql.NVarChar(256), like)
+      .input('Offset',   sql.Int,           offset)
+      .input('PageSize', sql.Int,           pageSize)
       .query(`
-        SELECT TOP (@Lim)
-          a.AppName,
-          a.AppPath,
-          m.MachineName,
-          u.UserName,
-          u.Domain,
-          MIN(a.FirstSeenUtc)    AS FirstSeenUtc,
-          MAX(a.LastSeenUtc)     AS LastSeenUtc,
-          SUM(a.ForegroundSeconds) AS ForegroundSeconds,
-          SUM(a.RunningSeconds)    AS RunningSeconds,
-          SUM(a.LaunchCount)       AS LaunchCount
-        FROM dbo.AppUsage a
-        JOIN dbo.Machines m ON m.MachineId = a.MachineId
-        JOIN dbo.Users    u ON u.UserId    = a.UserId
-        WHERE a.LastSeenUtc  >= @Start
-          AND a.FirstSeenUtc <  DATEADD(DAY, 1, @End)
-          AND (@Search = '%%'
-               OR a.AppName     LIKE @Search
-               OR m.MachineName LIKE @Search
-               OR u.UserName    LIKE @Search)
-        GROUP BY a.AppName, a.AppPath, m.MachineName, u.UserName, u.Domain
-        ORDER BY SUM(a.ForegroundSeconds) DESC;
+        WITH agg AS (
+          SELECT
+            a.AppName,
+            a.AppPath,
+            m.MachineName,
+            u.UserName,
+            u.Domain,
+            MIN(a.FirstSeenUtc)    AS FirstSeenUtc,
+            MAX(a.LastSeenUtc)     AS LastSeenUtc,
+            SUM(a.ForegroundSeconds) AS ForegroundSeconds,
+            SUM(a.RunningSeconds)    AS RunningSeconds,
+            SUM(a.LaunchCount)       AS LaunchCount
+          FROM dbo.AppUsage a
+          JOIN dbo.Machines m ON m.MachineId = a.MachineId
+          JOIN dbo.Users    u ON u.UserId    = a.UserId
+          WHERE a.LastSeenUtc  >= @Start
+            AND a.FirstSeenUtc <  DATEADD(DAY, 1, @End)
+            AND (@Search = '%%'
+                 OR a.AppName     LIKE @Search
+                 OR m.MachineName LIKE @Search
+                 OR u.UserName    LIKE @Search)
+          GROUP BY a.AppName, a.AppPath, m.MachineName, u.UserName, u.Domain
+        )
+        SELECT *, COUNT(*) OVER () AS TotalRows
+        FROM agg
+        ORDER BY ForegroundSeconds DESC
+        OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;
       `);
-    res.json(r.recordset);
+    const rows  = r.recordset;
+    const total = rows.length > 0 && rows[0].TotalRows != null ? rows[0].TotalRows : rows.length;
+    for (const row of rows) delete row.TotalRows;
+    res.json({ rows, total, page, pageSize });
   } catch (e) { next(e); }
 });
 

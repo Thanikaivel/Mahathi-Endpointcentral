@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { Spinner, ErrorBox } from '../components/Helpers.jsx';
+import Pagination from '../components/Pagination.jsx';
 
 // "08:58:19 AM" style
 function fmtTime(v) {
@@ -86,8 +87,11 @@ function Th({ label, col, sort, setSort, defaultDir = 'asc' }) {
 }
 
 export default function Users() {
-  const [rows, setRows]   = useState(null);
-  const [error, setError] = useState(null);
+  const [rows, setRows]         = useState(null);
+  const [total, setTotal]       = useState(0);
+  const [page, setPage]         = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [error, setError]       = useState(null);
   const [start, setStart] = useState(todayIso());
   const [end,   setEnd]   = useState(todayIso());
   const [q,     setQ]     = useState('');
@@ -95,13 +99,75 @@ export default function Users() {
 
   const load = useCallback(() => {
     setRows(null); setError(null);
-    api.usersDaily({ start, end, q }).then(setRows).catch(setError);
-  }, [start, end, q]);
+    api.usersDaily({ start, end, q, page, pageSize })
+      .then(r => { setRows(r.rows || []); setTotal(r.total || 0); })
+      .catch(setError);
+  }, [start, end, q, page, pageSize]);
 
   useEffect(() => { load(); }, [load]);
+  // Reset to page 1 whenever filters change
+  useEffect(() => { setPage(1); }, [start, end, q, pageSize]);
 
   function clearFilter() { setQ(''); }
   function clearAll()    { setQ(''); setStart(todayIso()); setEnd(todayIso()); }
+
+  const [exporting, setExporting] = useState(false);
+
+  async function exportToExcel() {
+    setExporting(true);
+    try {
+      // Fetch ALL matching rows (not just the current page) by requesting a big page.
+      // 5000 is the server-side cap for usersDaily — adjust there if you need more.
+      const all = await api.usersDaily({ start, end, q, page: 1, pageSize: 5000 });
+      const rows = all.rows || [];
+      if (rows.length === 0) {
+        alert('No data to export for the selected filters.');
+        return;
+      }
+
+      // Dynamic import keeps the xlsx library out of the initial bundle.
+      const XLSX = await import('xlsx');
+
+      // Reshape rows for export — make headers human-friendly and dates readable.
+      const sheetData = rows.map(r => ({
+        'Date':         r.Date ? new Date(r.Date).toISOString().slice(0, 10) : '',
+        'Computer':     r.MachineName || '',
+        'User':         (r.Domain ? r.Domain + '\\' : '') + (r.UserName || ''),
+        'First Login':  r.FirstLogin ? new Date(r.FirstLogin).toLocaleString() : '',
+        'Last Lock':    r.LastLock    ? new Date(r.LastLock).toLocaleString()    : '',
+        'Last Unlock':  r.LastUnlock  ? new Date(r.LastUnlock).toLocaleString()  : '',
+        'Last Seen':    r.MachineLastSeen ? new Date(r.MachineLastSeen).toLocaleString() : '',
+        'Active Hours': fmtActiveHours(r.ActiveSeconds),
+        'Active Seconds (raw)': r.ActiveSeconds || 0,
+        'Status':       r.LastStatus || ''
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(sheetData);
+      // Set column widths so the file looks polished
+      ws['!cols'] = [
+        { wch: 12 }, // Date
+        { wch: 14 }, // Computer
+        { wch: 26 }, // User
+        { wch: 22 }, // First Login
+        { wch: 22 }, // Last Lock
+        { wch: 22 }, // Last Unlock
+        { wch: 22 }, // Last Seen
+        { wch: 12 }, // Active Hours
+        { wch: 14 }, // Active Seconds
+        { wch: 12 }  // Status
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'User Activity');
+
+      const filename = `user-activity_${start}_to_${end}.xlsx`;
+      XLSX.writeFile(wb, filename);
+    } catch (e) {
+      alert('Export failed: ' + (e.message || e));
+    } finally {
+      setExporting(false);
+    }
+  }
 
   // Apply client-side sorting
   const sortedRows = useMemo(() => {
@@ -150,6 +216,9 @@ export default function Users() {
                onKeyDown={e => e.key === 'Enter' && load()} />
         <button className="btn ghost" onClick={clearFilter}>Clear filter</button>
         <button className="btn ghost" onClick={clearAll}>Clear</button>
+        <button className="btn" onClick={exportToExcel} disabled={exporting || !rows || rows.length === 0}>
+          {exporting ? 'Exporting...' : 'Export to Excel'}
+        </button>
       </div>
 
       <ErrorBox error={error} />
@@ -199,6 +268,8 @@ export default function Users() {
               )}
             </tbody>
           </table>
+          <Pagination total={total} page={page} pageSize={pageSize}
+                      onPageChange={setPage} onPageSizeChange={setPageSize} />
         </div>
       )}
     </>

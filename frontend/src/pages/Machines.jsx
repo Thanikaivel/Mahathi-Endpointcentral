@@ -1,18 +1,30 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { fmtDateTime, Spinner, ErrorBox } from '../components/Helpers.jsx';
+import Pagination from '../components/Pagination.jsx';
 
 export default function Machines() {
-  const [rows, setRows] = useState(null);
-  const [error, setError] = useState(null);
-  const [search, setSearch] = useState('');
+  const [rows, setRows]         = useState(null);
+  const [total, setTotal]       = useState(0);
+  const [page, setPage]         = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [error, setError]       = useState(null);
+  const [search, setSearch]     = useState('');
+  const [activeQuery, setActiveQuery] = useState('');
 
-  function load(q='') {
+  const load = useCallback(() => {
     setRows(null);
-    api.machines(q).then(setRows).catch(setError);
-  }
-  useEffect(() => { load(); }, []);
+    api.machines({ q: activeQuery, page, pageSize })
+      .then(r => { setRows(r.rows || []); setTotal(r.total || 0); })
+      .catch(setError);
+  }, [activeQuery, page, pageSize]);
+
+  useEffect(() => { load(); }, [load]);
+  // Reset to page 1 whenever the search or pageSize changes
+  useEffect(() => { setPage(1); }, [activeQuery, pageSize]);
+
+  function runSearch() { setActiveQuery(search); }
 
   function onlineBadge(lastSeen) {
     const ms = Date.now() - new Date(lastSeen).getTime();
@@ -27,8 +39,8 @@ export default function Machines() {
       <div className="toolbar">
         <input className="search" placeholder="Search machine name..." value={search}
                onChange={e => setSearch(e.target.value)}
-               onKeyDown={e => e.key === 'Enter' && load(search)} />
-        <button className="btn" onClick={() => load(search)}>Search</button>
+               onKeyDown={e => e.key === 'Enter' && runSearch()} />
+        <button className="btn" onClick={runSearch}>Search</button>
       </div>
       <ErrorBox error={error} />
       {!rows && !error && <Spinner />}
@@ -61,6 +73,8 @@ export default function Machines() {
               {rows.length === 0 && <tr><td colSpan={8} className="muted">No machines found.</td></tr>}
             </tbody>
           </table>
+          <Pagination total={total} page={page} pageSize={pageSize}
+                      onPageChange={setPage} onPageSizeChange={setPageSize} />
         </div>
       )}
     </>
