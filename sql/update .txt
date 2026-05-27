@@ -1,0 +1,9 @@
+UPDATE s
+   SET s.LogoffTimeUtc   = DATEADD(SECOND, -1, DATEADD(DAY, 1, CAST(CAST(s.LogonTimeUtc AS DATE) AS DATETIME2))),
+       s.DurationSeconds = DATEDIFF(SECOND, s.LogonTimeUtc,
+                              DATEADD(SECOND, -1, DATEADD(DAY, 1, CAST(CAST(s.LogonTimeUtc AS DATE) AS DATETIME2)))),
+       s.EndReason       = N'Midnight',
+       s.UpdatedUtc      = SYSUTCDATETIME()
+  FROM dbo.Sessions s
+ WHERE s.LogoffTimeUtc IS NULL
+   AND CAST(s.LogonTimeUtc AS DATE) < CAST(SYSUTCDATETIME() AS DATE);

@@ -25,8 +25,20 @@ export default function Overview() {
         <div className="card"><div className="label">Total Machines</div><div className="value">{stats.TotalMachines}</div></div>
         <div className="card green"><div className="label">Online (15 min)</div><div className="value">{stats.OnlineMachines}</div></div>
         <div className="card amber"><div className="label">Active Sessions</div><div className="value">{stats.ActiveSessions}</div></div>
-        <div className="card"><div className="label">Events Today</div><div className="value">{stats.EventsToday}</div></div>
-        <div className="card"><div className="label">Sessions Today</div><div className="value">{stats.SessionsToday}</div></div>
+        <div className="card">
+          <div className="label">Offline (3+ days)</div>
+          <div className="value">{stats.OfflineLast3Days?.toLocaleString() ?? '—'}</div>
+          <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+            machines silent for 3+ days
+          </div>
+        </div>
+        <div className="card">
+          <div className="label">Offline (7+ days)</div>
+          <div className="value">{stats.OfflineLast7Days?.toLocaleString() ?? '—'}</div>
+          <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+            machines silent for 7+ days
+          </div>
+        </div>
       </div>
 
       <div className="panel">

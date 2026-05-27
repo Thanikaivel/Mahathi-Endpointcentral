@@ -130,6 +130,28 @@ class StateMachine {
    */
   ingest(snapshot) {
     const nowIso = snapshot.timestampUtc || new Date().toISOString();
+    const nowDate = new Date(nowIso);
+
+    // 0. Midnight rollover: if the current session was started on a different
+    //    LOCAL day than today, close it and open a fresh one for today. This
+    //    keeps each day's row in the dashboard showing only that day's activity
+    //    (sessions don't span midnight).
+    if (this.session) {
+      const sessionDate = new Date(this.session.logonTimeUtc);
+      const sameLocalDay = sessionDate.getFullYear() === nowDate.getFullYear()
+                        && sessionDate.getMonth()    === nowDate.getMonth()
+                        && sessionDate.getDate()     === nowDate.getDate();
+      if (!sameLocalDay) {
+        // Stamp end-of-yesterday as the logoff time so the old session shows
+        // a clean per-day duration in the dashboard.
+        const endOfYesterday = new Date(sessionDate);
+        endOfYesterday.setHours(23, 59, 59, 999);
+        this.endSession({
+          reason: 'Midnight',
+          eventTimeUtc: endOfYesterday.toISOString()
+        });
+      }
+    }
 
     // 1. Logon / logoff / user switch
     const haveUser = !!snapshot.activeUser;

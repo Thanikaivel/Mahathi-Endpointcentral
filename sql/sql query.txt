@@ -1,0 +1,11 @@
+ Offline user checking 
+
+SELECT
+  MachineName,
+  LastSeenUtc,
+  DATEDIFF(DAY, LastSeenUtc, SYSUTCDATETIME()) AS DaysSilent,
+  Domain,
+  OSVersion
+FROM dbo.Machines
+WHERE LastSeenUtc < DATEADD(DAY, -3, SYSUTCDATETIME())
+ORDER BY LastSeenUtc ASC;

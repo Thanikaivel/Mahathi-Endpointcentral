@@ -29,6 +29,7 @@ function StatusBadge({ status }) {
     Logoff:    { bg: '#3a3a3a', fg: '#c9d1d9' },  // gray
     Offline:   { bg: '#3a3a3a', fg: '#c9d1d9' },  // gray
     Idle:      { bg: '#5a4a1d', fg: '#e7c97e' },  // amber
+    'Day End': { bg: '#2a2a4a', fg: '#a3a3e7' },  // muted purple
   };
   const c = colors[status] || { bg: '#3a3a3a', fg: '#c9d1d9' };
   return (

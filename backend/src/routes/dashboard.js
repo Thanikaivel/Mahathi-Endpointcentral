@@ -18,8 +18,12 @@ router.get('/overview', async (req, res, next) => {
         (SELECT COUNT(*) FROM dbo.Machines WHERE LastSeenUtc > DATEADD(MINUTE,-15,SYSUTCDATETIME())) AS OnlineMachines,
         (SELECT COUNT(*) FROM dbo.Users) AS TotalUsers,
         (SELECT COUNT(*) FROM dbo.Sessions WHERE LogoffTimeUtc IS NULL) AS ActiveSessions,
-        (SELECT COUNT(*) FROM dbo.SessionEvents WHERE EventTimeUtc > CAST(GETUTCDATE() AS DATE)) AS EventsToday,
-        (SELECT COUNT(*) FROM dbo.Sessions WHERE CAST(LogonTimeUtc AS DATE) = CAST(GETUTCDATE() AS DATE)) AS SessionsToday;
+        -- Machines that have been offline (no agent contact) for 3+ days
+        (SELECT COUNT(*) FROM dbo.Machines
+          WHERE LastSeenUtc < DATEADD(DAY, -3, SYSUTCDATETIME())) AS OfflineLast3Days,
+        -- Machines that have been offline for 7+ days
+        (SELECT COUNT(*) FROM dbo.Machines
+          WHERE LastSeenUtc < DATEADD(DAY, -7, SYSUTCDATETIME())) AS OfflineLast7Days;
 
       SELECT TOP 10 MachineName, LastSeenUtc, OSVersion, AgentVersion
       FROM dbo.Machines ORDER BY LastSeenUtc DESC;
@@ -221,14 +225,19 @@ router.get('/users/daily', async (req, res, next) => {
           sd.TotalSeconds,
           sd.ActiveSeconds,
           CASE
-            WHEN ls.LogoffTimeUtc IS NULL AND ls.IsLocked = 1 THEN 'Locked'
-            WHEN ls.LogoffTimeUtc IS NULL                     THEN 'Active'
-            WHEN ls.EndReason = 'Shutdown'                    THEN 'Shutdown'
-            WHEN ls.EndReason = 'Logoff'                      THEN 'Logoff'
-            WHEN ls.EndReason = 'AgentRestart'                THEN 'Restarted'
-            WHEN ls.EndReason = 'StaleTimeout'                THEN 'Offline'
-            WHEN ls.EndReason = 'LongIdle'                    THEN 'Idle'
-            WHEN ls.EndReason IS NOT NULL                     THEN ls.EndReason
+            -- Session row is still open, but the machine itself hasn't reported in 15 min
+            -- → the agent went away without writing a Logoff. Don't lie that it's Active.
+            WHEN ls.LogoffTimeUtc IS NULL
+                 AND m.LastSeenUtc < DATEADD(MINUTE, -15, SYSUTCDATETIME())   THEN 'Offline'
+            WHEN ls.LogoffTimeUtc IS NULL AND ls.IsLocked = 1                 THEN 'Locked'
+            WHEN ls.LogoffTimeUtc IS NULL                                     THEN 'Active'
+            WHEN ls.EndReason = 'Shutdown'                                    THEN 'Shutdown'
+            WHEN ls.EndReason = 'Logoff'                                      THEN 'Logoff'
+            WHEN ls.EndReason = 'AgentRestart'                                THEN 'Restarted'
+            WHEN ls.EndReason = 'StaleTimeout'                                THEN 'Offline'
+            WHEN ls.EndReason = 'LongIdle'                                    THEN 'Idle'
+            WHEN ls.EndReason = 'Midnight'                                    THEN 'Day End'
+            WHEN ls.EndReason IS NOT NULL                                     THEN ls.EndReason
             ELSE 'Unknown'
           END AS LastStatus,
           COUNT(*) OVER () AS TotalRows
