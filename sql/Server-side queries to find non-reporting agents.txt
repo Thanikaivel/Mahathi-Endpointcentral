@@ -1,0 +1,66 @@
+-- (1) Machines that have NEVER reported (registered but no contact)
+SELECT MachineName, FirstSeenUtc, AgentVersion, Domain
+FROM dbo.Machines
+WHERE LastSeenUtc IS NULL
+   OR LastSeenUtc = FirstSeenUtc;
+
+-- (2) All silent machines, grouped by how long they've been silent
+SELECT
+  CASE
+    WHEN DATEDIFF(MINUTE, LastSeenUtc, SYSUTCDATETIME()) <  15 THEN '< 15 min (healthy)'
+    WHEN DATEDIFF(MINUTE, LastSeenUtc, SYSUTCDATETIME()) <  60 THEN '15-60 min'
+    WHEN DATEDIFF(HOUR,   LastSeenUtc, SYSUTCDATETIME()) <  24 THEN '1-24 hours'
+    WHEN DATEDIFF(DAY,    LastSeenUtc, SYSUTCDATETIME()) <   7 THEN '1-7 days'
+    WHEN DATEDIFF(DAY,    LastSeenUtc, SYSUTCDATETIME()) <  30 THEN '7-30 days'
+    ELSE '30+ days'
+  END AS SilentBucket,
+  COUNT(*) AS Machines
+FROM dbo.Machines
+GROUP BY
+  CASE
+    WHEN DATEDIFF(MINUTE, LastSeenUtc, SYSUTCDATETIME()) <  15 THEN '< 15 min (healthy)'
+    WHEN DATEDIFF(MINUTE, LastSeenUtc, SYSUTCDATETIME()) <  60 THEN '15-60 min'
+    WHEN DATEDIFF(HOUR,   LastSeenUtc, SYSUTCDATETIME()) <  24 THEN '1-24 hours'
+    WHEN DATEDIFF(DAY,    LastSeenUtc, SYSUTCDATETIME()) <   7 THEN '1-7 days'
+    WHEN DATEDIFF(DAY,    LastSeenUtc, SYSUTCDATETIME()) <  30 THEN '7-30 days'
+    ELSE '30+ days'
+  END
+ORDER BY 1;
+
+-- (3) Full list of machines silent for more than 1 hour, sorted oldest first
+--     (this is your "needs investigation" list)
+SELECT
+  MachineName,
+  Domain,
+  AgentVersion,
+  IPAddress,
+  LastSeenUtc,
+  DATEDIFF(HOUR, LastSeenUtc, SYSUTCDATETIME()) AS HoursSilent
+FROM dbo.Machines
+WHERE LastSeenUtc < DATEADD(HOUR, -1, SYSUTCDATETIME())
+ORDER BY LastSeenUtc ASC;
+
+-- (4) Recent ingest batch errors (per-machine API failures the backend logged)
+SELECT TOP 100
+  m.MachineName,
+  b.ClientBatchId,
+  b.Status,
+  b.ErrorMessage,
+  b.ReceivedUtc
+FROM dbo.IngestBatches b
+LEFT JOIN dbo.Machines m ON m.MachineId = b.MachineId
+WHERE b.Status = 'ERROR'
+  AND b.ReceivedUtc > DATEADD(DAY, -3, SYSUTCDATETIME())
+ORDER BY b.ReceivedUtc DESC;
+
+--------------------
+-- Decommission a machine cleanly
+
+-- Manual decommission - just delete the row, history under it stays linked
+-- via cascade-or-keep behavior of your FKs.
+-- Or add a Decommissioned BIT column if you want soft-delete.
+
+-- Soft option: just rename to mark as retired
+UPDATE dbo.Machines
+   SET MachineName = MachineName + ' [DECOMMISSIONED]'
+ WHERE MachineId IN (1234, 5678, 9012);  -- list of MachineIds

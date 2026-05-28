@@ -252,6 +252,18 @@ try {
     if ($os) { $osCaption = $os.Caption; $osVersion = $os.Version }
 } catch { }
 
+# ---------- Hardware UUID (stable machine identifier across hostname changes) ----------
+# Read from SMBIOS via WMI. Stays the same across Windows reinstalls and
+# hostname renames. Returns null on the rare machine where BIOS doesn't expose it.
+$hardwareId = $null
+try {
+    $hardwareId = (Get-CimInstance Win32_ComputerSystemProduct -ErrorAction SilentlyContinue).UUID
+    # Some VMs / faulty BIOSes report the all-zero or default UUID — treat as null
+    if ($hardwareId -in @('00000000-0000-0000-0000-000000000000','FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF')) {
+        $hardwareId = $null
+    }
+} catch { }
+
 # ---------- Idle seconds (Session 0 aware) ----------
 $idleSeconds = 0
 $idleSource  = 'none'
@@ -325,6 +337,7 @@ $out = [ordered]@{
     domain             = $env:USERDOMAIN
     osCaption          = $osCaption
     osVersion          = $osVersion
+    hardwareId         = $hardwareId
     ipAddress          = $ip
     activeUser         = $activeUser
     activeDomain       = $activeDomain

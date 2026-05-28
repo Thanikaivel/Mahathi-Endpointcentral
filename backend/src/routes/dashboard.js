@@ -23,7 +23,21 @@ router.get('/overview', async (req, res, next) => {
           WHERE LastSeenUtc < DATEADD(DAY, -3, SYSUTCDATETIME())) AS OfflineLast3Days,
         -- Machines that have been offline for 7+ days
         (SELECT COUNT(*) FROM dbo.Machines
-          WHERE LastSeenUtc < DATEADD(DAY, -7, SYSUTCDATETIME())) AS OfflineLast7Days;
+          WHERE LastSeenUtc < DATEADD(DAY, -7, SYSUTCDATETIME())) AS OfflineLast7Days,
+        -- Today's offline users: users who were active in the last 7 days
+        -- but have NOT had a session starting today.
+        (SELECT COUNT(DISTINCT u.UserId)
+           FROM dbo.Users u
+          WHERE EXISTS (
+            SELECT 1 FROM dbo.Sessions s
+             WHERE s.UserId = u.UserId
+               AND s.LogonTimeUtc > DATEADD(DAY, -7, SYSUTCDATETIME())
+          )
+            AND NOT EXISTS (
+            SELECT 1 FROM dbo.Sessions s
+             WHERE s.UserId = u.UserId
+               AND CAST(s.LogonTimeUtc AS DATE) = CAST(SYSUTCDATETIME() AS DATE)
+          )) AS OfflineUsersToday;
 
       SELECT TOP 10 MachineName, LastSeenUtc, OSVersion, AgentVersion
       FROM dbo.Machines ORDER BY LastSeenUtc DESC;

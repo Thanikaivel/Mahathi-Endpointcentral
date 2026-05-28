@@ -23,8 +23,14 @@ export default function Overview() {
       <h1 className="page-title">Overview</h1>
       <div className="cards">
         <div className="card"><div className="label">Total Machines</div><div className="value">{stats.TotalMachines}</div></div>
-        <div className="card green"><div className="label">Online (15 min)</div><div className="value">{stats.OnlineMachines}</div></div>
         <div className="card amber"><div className="label">Active Sessions</div><div className="value">{stats.ActiveSessions}</div></div>
+        <div className="card">
+          <div className="label">Offline Users Today</div>
+          <div className="value">{stats.OfflineUsersToday?.toLocaleString() ?? '—'}</div>
+          <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+            recent users not signed in today
+          </div>
+        </div>
         <div className="card">
           <div className="label">Offline (3+ days)</div>
           <div className="value">{stats.OfflineLast3Days?.toLocaleString() ?? '—'}</div>

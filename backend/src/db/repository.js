@@ -5,28 +5,57 @@
  */
 const { sql, getPool } = require('./pool');
 
-async function upsertMachine({ machineName, domain, osVersion, ipAddress, agentVersion }) {
+async function upsertMachine({ machineName, hardwareId, domain, osVersion, ipAddress, agentVersion }) {
   const pool = await getPool();
+
+  // Identify the row using HardwareId first (stable across hostname renames).
+  // Fall back to MachineName only when the agent didn't provide a HardwareId
+  // (legacy agent, or a machine whose BIOS doesn't expose a UUID).
+  //
+  // The MERGE's ON clause must be DETERMINISTIC for MSSQL, so we cleanly
+  // express the "match by HardwareId OR (no HardwareId and match by name)"
+  // priority by first resolving the target MachineId in a separate SELECT.
   const r = await pool
     .request()
-    .input('MachineName', sql.NVarChar(128), machineName)
-    .input('Domain', sql.NVarChar(128), domain || null)
-    .input('OSVersion', sql.NVarChar(128), osVersion || null)
-    .input('IPAddress', sql.NVarChar(64), ipAddress || null)
-    .input('AgentVersion', sql.NVarChar(32), agentVersion || null)
+    .input('MachineName',  sql.NVarChar(128), machineName)
+    .input('HardwareId',   sql.NVarChar(64),  hardwareId || null)
+    .input('Domain',       sql.NVarChar(128), domain || null)
+    .input('OSVersion',    sql.NVarChar(128), osVersion || null)
+    .input('IPAddress',    sql.NVarChar(64),  ipAddress || null)
+    .input('AgentVersion', sql.NVarChar(32),  agentVersion || null)
     .query(`
-      MERGE dbo.Machines AS T
-      USING (SELECT @MachineName AS MachineName) AS S
-        ON T.MachineName = S.MachineName
-      WHEN MATCHED THEN UPDATE SET
-          Domain = COALESCE(@Domain, T.Domain),
-          OSVersion = COALESCE(@OSVersion, T.OSVersion),
-          IPAddress = COALESCE(@IPAddress, T.IPAddress),
-          AgentVersion = COALESCE(@AgentVersion, T.AgentVersion),
-          LastSeenUtc = SYSUTCDATETIME()
-      WHEN NOT MATCHED THEN INSERT (MachineName, Domain, OSVersion, IPAddress, AgentVersion)
-                          VALUES (@MachineName, @Domain, @OSVersion, @IPAddress, @AgentVersion)
-      OUTPUT inserted.MachineId;
+      DECLARE @MatchedId INT;
+      -- Prefer match by HardwareId (stable across rename)
+      IF @HardwareId IS NOT NULL
+        SELECT TOP 1 @MatchedId = MachineId
+          FROM dbo.Machines
+         WHERE HardwareId = @HardwareId;
+      -- Fall back to MachineName if no HardwareId match
+      IF @MatchedId IS NULL
+        SELECT TOP 1 @MatchedId = MachineId
+          FROM dbo.Machines
+         WHERE MachineName = @MachineName
+           AND (HardwareId IS NULL OR @HardwareId IS NULL);
+
+      IF @MatchedId IS NOT NULL
+      BEGIN
+        UPDATE dbo.Machines
+           SET MachineName  = @MachineName,
+               HardwareId   = COALESCE(@HardwareId, HardwareId),
+               Domain       = COALESCE(@Domain, Domain),
+               OSVersion    = COALESCE(@OSVersion, OSVersion),
+               IPAddress    = COALESCE(@IPAddress, IPAddress),
+               AgentVersion = COALESCE(@AgentVersion, AgentVersion),
+               LastSeenUtc  = SYSUTCDATETIME()
+         WHERE MachineId = @MatchedId;
+        SELECT @MatchedId AS MachineId;
+      END
+      ELSE
+      BEGIN
+        INSERT INTO dbo.Machines (MachineName, HardwareId, Domain, OSVersion, IPAddress, AgentVersion)
+        OUTPUT inserted.MachineId
+        VALUES (@MachineName, @HardwareId, @Domain, @OSVersion, @IPAddress, @AgentVersion);
+      END
     `);
   return r.recordset[0].MachineId;
 }

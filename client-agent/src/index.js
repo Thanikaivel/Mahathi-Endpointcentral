@@ -51,6 +51,7 @@ let machineMeta = {
   domain: process.env.USERDOMAIN || null,
   osVersion: null,
   ipAddress: null,
+  hardwareId: null,
   agentVersion: cfg.agentVersion
 };
 
@@ -122,6 +123,7 @@ async function pollOnce() {
   if (snap.domain)      machineMeta.domain      = snap.domain;
   if (snap.osCaption)   machineMeta.osVersion   = `${snap.osCaption} (${snap.osVersion || ''})`.trim();
   if (snap.ipAddress)   machineMeta.ipAddress   = snap.ipAddress;
+  if (snap.hardwareId)  machineMeta.hardwareId  = snap.hardwareId;
   lastUserSnapshotAt = new Date();
   sm.ingest(snap);
 
