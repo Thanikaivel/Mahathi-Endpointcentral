@@ -1,5 +1,0 @@
-out/
-staging/agent/
-*.wixobj
-*.wixpdb
-AgentFiles.wxs

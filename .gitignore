@@ -1,0 +1,5 @@
+*.bak
+client-agent.zip
+deploy/msi.zip
+deploy/msi/
+node_modules/
