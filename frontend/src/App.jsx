@@ -10,6 +10,8 @@ import TopApps from './pages/TopApps.jsx';
 import Reports from './pages/Reports.jsx';
 import SessionDetail from './pages/SessionDetail.jsx';
 import Login from './pages/Login.jsx';
+import OfflineMachines from './pages/OfflineMachines.jsx';
+import OfflineUsersToday from './pages/OfflineUsersToday.jsx';
 import { api } from './api/client.js';
 
 function RequireAuth({ children }) {
@@ -33,6 +35,8 @@ export default function App() {
         <Route path="/apps"         element={<TopApps />} />
         <Route path="/reports"      element={<Reports />} />
         <Route path="/sessions/:id" element={<SessionDetail />} />
+        <Route path="/offline-machines/:days" element={<OfflineMachines />} />
+        <Route path="/offline-users-today"    element={<OfflineUsersToday />} />
       </Route>
     </Routes>
   );

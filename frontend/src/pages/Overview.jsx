@@ -24,27 +24,33 @@ export default function Overview() {
       <div className="cards">
         <div className="card"><div className="label">Total Machines</div><div className="value">{stats.TotalMachines}</div></div>
         <div className="card amber"><div className="label">Active Sessions</div><div className="value">{stats.ActiveSessions}</div></div>
-        <div className="card">
-          <div className="label">Offline Users Today</div>
-          <div className="value">{stats.OfflineUsersToday?.toLocaleString() ?? '—'}</div>
-          <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
-            recent users not signed in today
+        <Link to="/offline-users-today" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <div className="card" style={{ cursor: 'pointer' }}>
+            <div className="label">Offline Users Today</div>
+            <div className="value">{stats.OfflineUsersToday?.toLocaleString() ?? '—'}</div>
+            <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+              recent users not signed in today
+            </div>
           </div>
-        </div>
-        <div className="card">
-          <div className="label">Offline (3+ days)</div>
-          <div className="value">{stats.OfflineLast3Days?.toLocaleString() ?? '—'}</div>
-          <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
-            machines silent for 3+ days
+        </Link>
+        <Link to="/offline-machines/3" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <div className="card" style={{ cursor: 'pointer' }}>
+            <div className="label">Offline (3+ days)</div>
+            <div className="value">{stats.OfflineLast3Days?.toLocaleString() ?? '—'}</div>
+            <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+              machines silent for 3+ days
+            </div>
           </div>
-        </div>
-        <div className="card">
-          <div className="label">Offline (7+ days)</div>
-          <div className="value">{stats.OfflineLast7Days?.toLocaleString() ?? '—'}</div>
-          <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
-            machines silent for 7+ days
+        </Link>
+        <Link to="/offline-machines/7" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <div className="card" style={{ cursor: 'pointer' }}>
+            <div className="label">Offline (7+ days)</div>
+            <div className="value">{stats.OfflineLast7Days?.toLocaleString() ?? '—'}</div>
+            <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+              machines silent for 7+ days
+            </div>
           </div>
-        </div>
+        </Link>
       </div>
 
       <div className="panel">

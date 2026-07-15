@@ -449,4 +449,81 @@ router.get('/reports/daily', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// --- Offline drill-down endpoints -------------------------------------------
+
+// Machines that haven't reported for at least N days (default 3)
+router.get('/offline-machines', async (req, res, next) => {
+  try {
+    const minDays = Math.max(1, Math.min(365, asInt(req.query.minDays, 3)));
+    const pool = await getPool();
+    const r = await pool.request()
+      .input('MinDays', sql.Int, minDays)
+      .query(`
+        SELECT
+          m.MachineId,
+          m.MachineName,
+          m.Domain,
+          m.OSVersion,
+          m.IPAddress,
+          m.AgentVersion,
+          m.FirstSeenUtc,
+          m.LastSeenUtc,
+          DATEDIFF(DAY, m.LastSeenUtc, SYSUTCDATETIME()) AS DaysSilent,
+          (SELECT TOP 1 u.UserName
+             FROM dbo.Sessions s
+             JOIN dbo.Users u ON u.UserId = s.UserId
+            WHERE s.MachineId = m.MachineId
+            ORDER BY s.LogonTimeUtc DESC) AS LastUser,
+          (SELECT TOP 1 u.Domain
+             FROM dbo.Sessions s
+             JOIN dbo.Users u ON u.UserId = s.UserId
+            WHERE s.MachineId = m.MachineId
+            ORDER BY s.LogonTimeUtc DESC) AS LastUserDomain
+        FROM dbo.Machines m
+        WHERE m.LastSeenUtc < DATEADD(DAY, -@MinDays, SYSUTCDATETIME())
+        ORDER BY m.LastSeenUtc ASC;
+      `);
+    res.json(r.recordset);
+  } catch (e) { next(e); }
+});
+
+// Users who were active in last 7 days but haven't logged in today
+router.get('/offline-users-today', async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const r = await pool.request().query(`
+      SELECT
+        u.UserId,
+        u.UserName,
+        u.Domain,
+        u.DisplayName,
+        (SELECT TOP 1 s.LogonTimeUtc
+           FROM dbo.Sessions s
+          WHERE s.UserId = u.UserId
+          ORDER BY s.LogonTimeUtc DESC) AS LastLogonUtc,
+        (SELECT TOP 1 m.MachineName
+           FROM dbo.Sessions s
+           JOIN dbo.Machines m ON m.MachineId = s.MachineId
+          WHERE s.UserId = u.UserId
+          ORDER BY s.LogonTimeUtc DESC) AS LastMachine,
+        DATEDIFF(HOUR,
+                 (SELECT TOP 1 s.LogonTimeUtc FROM dbo.Sessions s WHERE s.UserId = u.UserId ORDER BY s.LogonTimeUtc DESC),
+                 SYSUTCDATETIME()) AS HoursSinceLastLogon
+      FROM dbo.Users u
+      WHERE EXISTS (
+        SELECT 1 FROM dbo.Sessions s
+         WHERE s.UserId = u.UserId
+           AND s.LogonTimeUtc > DATEADD(DAY, -7, SYSUTCDATETIME())
+      )
+        AND NOT EXISTS (
+        SELECT 1 FROM dbo.Sessions s
+         WHERE s.UserId = u.UserId
+           AND CAST(s.LogonTimeUtc AS DATE) = CAST(SYSUTCDATETIME() AS DATE)
+      )
+      ORDER BY LastLogonUtc DESC;
+    `);
+    res.json(r.recordset);
+  } catch (e) { next(e); }
+});
+
 module.exports = router;

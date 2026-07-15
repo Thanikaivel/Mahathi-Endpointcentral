@@ -79,6 +79,8 @@ export const api = {
     return get(`/dashboard/apps/list?${p.toString()}`);
   },
   daily:         (days=14)         => get(`/dashboard/reports/daily?days=${days}`),
+  offlineMachines: (minDays=3)     => get(`/dashboard/offline-machines?minDays=${minDays}`),
+  offlineUsersToday: ()            => get(`/dashboard/offline-users-today`),
 
   // --- Auth ---
   login: async (username, password) => {
